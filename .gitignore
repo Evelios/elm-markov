@@ -1,0 +1,7 @@
+# Elm Stuff
+elm-stuff/
+
+# User Stuff
+*.vim
+*.swp
+
