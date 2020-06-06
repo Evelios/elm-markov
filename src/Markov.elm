@@ -37,6 +37,9 @@ type Markov
 -- Builders
 
 
+{-| Create an empty markov chain with no elements in it. This is needed to add further elements into it to start to
+train the model.
+-}
 empty : Markov
 empty =
     let
@@ -50,6 +53,8 @@ empty =
 -- Accessors
 
 
+{-| Private: Method to convert a character to it's index within the matrix.
+-}
 charToIndex : Char -> Maybe Int
 charToIndex c =
     if Char.isUpper c then
@@ -65,6 +70,8 @@ charToIndex c =
         Nothing
 
 
+{-| Private: Get the number of times this transition is located in the markov graph.
+-}
 get : Char -> Char -> Markov -> Maybe Int
 get from to (Markov matrix _) =
     let
@@ -83,7 +90,8 @@ get from to (Markov matrix _) =
             Nothing
 
 
-{-| -}
+{-| Get the probability of a particular transition happening.
+-}
 probabilityOf : Char -> Char -> Markov -> Float
 probabilityOf from to markov =
     case markov of
