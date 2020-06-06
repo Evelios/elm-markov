@@ -5,6 +5,7 @@ module Markov exposing
     , probabilityOf
     )
 
+import Dict exposing (Dict)
 import Matrix exposing (Matrix)
 
 
@@ -29,6 +30,26 @@ import Matrix exposing (Matrix)
 # Generation
 
 -}
+
+
+
+{- A markov graph which represents the chance of transitioning from one element to another.
+
+   The row is the 'from' element and the column is the 'to' element.
+
+   Example:
+
+   Total = 15
+       a  b  c
+     a 1  2  1
+     b 3  2  5
+     c 0  1  0
+
+   Chance of a -> b = 2 / 15
+   Chance of b -> a = 3 / 15
+-}
+
+
 type Markov
     = Markov (Matrix Int) Int
 
@@ -53,35 +74,46 @@ empty =
 -- Accessors
 
 
+{-| Private: The list of all possible character elements that will be stored in the markov model.
+-}
+elements : List Char
+elements =
+    let
+        lowercase =
+            List.range (Char.toCode 'a') (Char.toCode 'z')
+                |> List.map Char.fromCode
+
+        numbers =
+            List.range (Char.toCode '0') (Char.toCode '9')
+                |> List.map Char.fromCode
+    in
+    List.concat
+        [ lowercase
+        , numbers
+        , [ ' ' ]
+        ]
+
+
+{-| Private: The dictionary of mappings from the element to matrix element.
+-}
+matrixLookupTable : Dict Char Int
+matrixLookupTable =
+    List.indexedMap (\i e -> ( e, i )) elements
+        |> Dict.fromList
+
+
 {-| Private: Method to convert a character to it's index within the matrix.
 -}
 charToIndex : Char -> Maybe Int
 charToIndex c =
-    if Char.isUpper c then
-        charToIndex <| Char.toLower c
-
-    else if Char.isLower c then
-        Just <| Char.toCode c - Char.toCode 'a'
-
-    else if Char.isDigit c then
-        Just <| Char.toCode c - Char.toCode '0'
-
-    else
-        Nothing
+    Dict.get c matrixLookupTable
 
 
 {-| Private: Get the number of times this transition is located in the markov graph.
 -}
 get : Char -> Char -> Markov -> Maybe Int
 get from to (Markov matrix _) =
-    let
-        maybeFromIndex =
-            charToIndex from
-
-        maybeToIndex =
-            charToIndex to
-    in
-    case ( maybeFromIndex, maybeToIndex ) of
+    case ( charToIndex from, charToIndex to ) of
         ( Just fromIndex, Just toIndex ) ->
             Matrix.get fromIndex toIndex matrix
                 |> Result.toMaybe
