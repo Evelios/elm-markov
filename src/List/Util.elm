@@ -1,4 +1,4 @@
-module List.Extra exposing (groupsOfTwo)
+module List.Util exposing (groupsOfTwo)
 
 
 groupsOfTwo : List a -> List ( a, a )

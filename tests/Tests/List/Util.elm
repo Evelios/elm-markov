@@ -1,7 +1,7 @@
-module Tests.List.Extra exposing (..)
+module Tests.List.Util exposing (..)
 
 import Expect
-import List.Extra
+import List.Util
 import Test exposing (Test, describe, test)
 
 
@@ -10,18 +10,18 @@ groupsOfTwo =
     describe "groupsOfTwo"
         [ test "Empty list" <|
             \_ ->
-                List.Extra.groupsOfTwo []
+                List.Util.groupsOfTwo []
                     |> Expect.equal []
         , test "Single element" <|
             \_ ->
-                List.Extra.groupsOfTwo [ 1 ]
+                List.Util.groupsOfTwo [ 1 ]
                     |> Expect.equal []
         , test "Two elements" <|
             \_ ->
-                List.Extra.groupsOfTwo [ 1, 2 ]
+                List.Util.groupsOfTwo [ 1, 2 ]
                     |> Expect.equal [ ( 1, 2 ) ]
         , test "Three elements" <|
             \_ ->
-                List.Extra.groupsOfTwo [ 1, 2, 3 ]
+                List.Util.groupsOfTwo [ 1, 2, 3 ]
                     |> Expect.equal [ ( 1, 2 ), ( 2, 3 ) ]
         ]

@@ -29,8 +29,10 @@ module Markov exposing
 
 -}
 
+import Array exposing (Array)
 import Dict exposing (Dict)
 import List.Extra
+import List.Util
 import Matrix exposing (Matrix)
 import Random exposing (Generator)
 
@@ -81,20 +83,8 @@ empty =
 -}
 elements : List Char
 elements =
-    let
-        lowercase =
-            List.range (Char.toCode 'a') (Char.toCode 'z')
-                |> List.map Char.fromCode
-
-        numbers =
-            List.range (Char.toCode '0') (Char.toCode '9')
-                |> List.map Char.fromCode
-    in
-    List.concat
-        [ lowercase
-        , numbers
-        , [ ' ' ]
-        ]
+    List.range (Char.toCode 'a') (Char.toCode 'z')
+        |> List.map Char.fromCode
 
 
 {-| Private: The dictionary of mappings from the element to matrix element.
@@ -171,7 +161,7 @@ addList : List String -> Markov -> Markov
 addList strings markov =
     strings
         |> List.map String.toList
-        |> List.map List.Extra.groupsOfTwo
+        |> List.map List.Util.groupsOfTwo
         |> List.foldl addTransitionList markov
 
 
@@ -188,5 +178,64 @@ addTransitionList trainingData markov =
 
 
 word : Markov -> Generator String
-word _ =
-    Random.constant "fdsa"
+word (Markov matrix _) =
+    let
+        maybeGenStartingChar : Maybe (Generator Char)
+        maybeGenStartingChar =
+            case elements of
+                firstEle :: remainingEle ->
+                    Just <| Random.uniform firstEle remainingEle
+
+                [] ->
+                    Nothing
+
+        -- Should probably be a maybe
+        nextChar : Char -> Generator Char
+        nextChar prevChar =
+            let
+                weights : List Float
+                weights =
+                    charToIndex prevChar
+                        -- Need to fix this
+                        |> Maybe.withDefault 0
+                        |> (\row -> Matrix.getRow row matrix)
+                        |> Result.map Array.toList
+                        |> Result.withDefault (List.repeat (List.length elements) 1)
+                        |> (\intWeights ->
+                                List.map (\weight -> toFloat weight / (toFloat <| List.sum intWeights)) intWeights
+                           )
+
+                possibilities : List ( Float, Char )
+                possibilities =
+                    List.Extra.zip weights elements
+            in
+            case possibilities of
+                firstPossibility :: remainingPossibilities ->
+                    Random.weighted firstPossibility remainingPossibilities
+
+                [] ->
+                    Random.constant ' '
+
+        generateWord : Int -> Generator Char -> Generator (List Char) -> Generator (List Char)
+        generateWord depth prev acc =
+            case depth of
+                0 ->
+                    acc
+
+                _ ->
+                    let
+                        next =
+                            Random.andThen nextChar prev
+
+                        nextAcc =
+                            Random.map2 (\a n -> List.append a [ n ]) acc next
+                    in
+                    generateWord (depth - 1) next nextAcc
+    in
+    case maybeGenStartingChar of
+        Just genStartingChar ->
+            generateWord 5 genStartingChar (Random.map List.singleton genStartingChar)
+                |> Random.map String.fromList
+
+        Nothing ->
+            Random.constant ""
