@@ -38,7 +38,7 @@ main =
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( { words = []
-      , markov = Markov.empty
+      , markov = newMarkov
       }
     , Cmd.none
     )
@@ -70,13 +70,24 @@ update msg model =
 
         GenerateWord ->
             ( model
-            , Random.generate WordGenerated <| Markov.word model.markov
+            , Random.generate WordGenerated <|
+                Random.map String.fromList (Markov.word model.markov)
             )
 
         WordGenerated word ->
             ( { model | words = word :: model.words }
             , Cmd.none
             )
+
+
+newMarkov : Markov
+newMarkov =
+    let
+        alphabet =
+            List.range (Char.toCode 'a') (Char.toCode 'z')
+                |> List.map Char.fromCode
+    in
+    Markov.empty alphabet
 
 
 requestCorpus : Cmd Msg
@@ -96,7 +107,7 @@ trainMarkov rawCorpus =
                 |> List.filter (not << String.isEmpty)
     in
     cleanCorpus
-        |> (\cleanedCorpus -> Markov.addList cleanedCorpus Markov.empty)
+        |> (\cleanedCorpus -> Markov.addList cleanedCorpus newMarkov)
 
 
 

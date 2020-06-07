@@ -56,7 +56,12 @@ import Random exposing (Generator)
 
 
 type Markov
-    = Markov (Matrix Int) Int
+    = Markov
+        { matrix : Matrix Int
+        , total : Int
+        , alphabet : List Char
+        , alphabetLookup : Dict Char Int
+        }
 
 
 
@@ -66,68 +71,59 @@ type Markov
 {-| Create an empty markov chain with no elements in it. This is needed to add further elements into it to start to
 train the model.
 -}
-empty : Markov
-empty =
+empty : List Char -> Markov
+empty alphabet =
     let
-        numCharacters =
-            36
+        numElements =
+            List.length alphabet
     in
-    Markov (Matrix.repeat numCharacters numCharacters 0) 0
+    Markov
+        { matrix = Matrix.repeat numElements numElements 0
+        , total = 0
+        , alphabet = alphabet
+        , alphabetLookup = Dict.fromList <| List.indexedMap (\i a -> ( a, i )) alphabet
+        }
 
 
 
 -- Accessors
 
 
-{-| Private: The list of all possible character elements that will be stored in the markov model.
--}
-elements : List Char
-elements =
-    List.range (Char.toCode 'a') (Char.toCode 'z')
-        |> List.map Char.fromCode
-
-
-{-| Private: The dictionary of mappings from the element to matrix element.
--}
-matrixLookupTable : Dict Char Int
-matrixLookupTable =
-    List.indexedMap (\i e -> ( e, i )) elements
-        |> Dict.fromList
-
-
 {-| Private: Method to convert a character to it's index within the matrix.
 -}
-charToIndex : Char -> Maybe Int
-charToIndex c =
-    Dict.get c matrixLookupTable
+charToIndex : Char -> Markov -> Maybe Int
+charToIndex c (Markov model) =
+    Dict.get c model.alphabetLookup
 
 
 {-| Private: Get the number of times this transition is located in the markov graph.
 -}
 get : Char -> Char -> Markov -> Maybe Int
-get from to (Markov matrix _) =
-    case ( charToIndex from, charToIndex to ) of
-        ( Just fromIndex, Just toIndex ) ->
-            Matrix.get fromIndex toIndex matrix
-                |> Result.toMaybe
+get from to markov =
+    case markov of
+        Markov model ->
+            case ( charToIndex from markov, charToIndex to markov ) of
+                ( Just fromIndex, Just toIndex ) ->
+                    Matrix.get fromIndex toIndex model.matrix
+                        |> Result.toMaybe
 
-        _ ->
-            Nothing
+                _ ->
+                    Nothing
 
 
 {-| Get the probability of a particular transition happening.
 -}
 probabilityOf : Char -> Char -> Markov -> Float
-probabilityOf from to markov =
-    case markov of
-        Markov _ 0 ->
+probabilityOf from to (Markov markov) =
+    case markov.total of
+        0 ->
             0
 
-        Markov _ count ->
-            markov
+        total ->
+            Markov markov
                 |> get from to
                 |> Maybe.withDefault 0
-                |> (\occurrences -> toFloat occurrences / toFloat count)
+                |> (\occurrences -> toFloat occurrences / toFloat total)
 
 
 
@@ -144,11 +140,15 @@ add from to markov =
             Maybe.map2
                 (\fromIndex toIndex ->
                     case markov of
-                        Markov matrix count ->
-                            Markov (Matrix.set fromIndex toIndex value matrix) (count + 1)
+                        Markov model ->
+                            Markov
+                                { model
+                                    | matrix = Matrix.set fromIndex toIndex value model.matrix
+                                    , total = model.total + 1
+                                }
                 )
-                (charToIndex from)
-                (charToIndex to)
+                (charToIndex from markov)
+                (charToIndex to markov)
                 |> Maybe.withDefault markov
     in
     get from to markov
@@ -177,12 +177,12 @@ addTransitionList trainingData markov =
 -- Generate
 
 
-word : Markov -> Generator String
-word (Markov matrix _) =
+word : Markov -> Generator (List Char)
+word (Markov model) =
     let
         maybeGenStartingChar : Maybe (Generator Char)
         maybeGenStartingChar =
-            case elements of
+            case model.alphabet of
                 firstEle :: remainingEle ->
                     Just <| Random.uniform firstEle remainingEle
 
@@ -195,19 +195,19 @@ word (Markov matrix _) =
             let
                 weights : List Float
                 weights =
-                    charToIndex prevChar
+                    charToIndex prevChar (Markov model)
                         -- Need to fix this
                         |> Maybe.withDefault 0
-                        |> (\row -> Matrix.getRow row matrix)
+                        |> (\row -> Matrix.getRow row model.matrix)
                         |> Result.map Array.toList
-                        |> Result.withDefault (List.repeat (List.length elements) 1)
+                        |> Result.withDefault (List.repeat (List.length model.alphabet) 1)
                         |> (\intWeights ->
                                 List.map (\weight -> toFloat weight / (toFloat <| List.sum intWeights)) intWeights
                            )
 
                 possibilities : List ( Float, Char )
                 possibilities =
-                    List.Extra.zip weights elements
+                    List.Extra.zip weights model.alphabet
             in
             case possibilities of
                 firstPossibility :: remainingPossibilities ->
@@ -235,7 +235,6 @@ word (Markov matrix _) =
     case maybeGenStartingChar of
         Just genStartingChar ->
             generateWord 5 genStartingChar (Random.map List.singleton genStartingChar)
-                |> Random.map String.fromList
 
         Nothing ->
-            Random.constant ""
+            Random.constant []
