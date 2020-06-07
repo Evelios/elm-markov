@@ -1,13 +1,9 @@
 module Markov exposing
     ( Markov
-    , add
-    , empty
-    , probabilityOf
+    , add, addList
+    , word
+    , empty, probabilityOf
     )
-
-import Dict exposing (Dict)
-import Matrix exposing (Matrix)
-
 
 {-| Create a markov transition model of string inputs. This creates
 
@@ -24,12 +20,19 @@ import Matrix exposing (Matrix)
 
 # Modifiers
 
-@docs add
+@docs add, addList
 
 
 # Generation
 
+@docs word
+
 -}
+
+import Dict exposing (Dict)
+import List.Extra
+import Matrix exposing (Matrix)
+import Random exposing (Generator)
 
 
 
@@ -162,3 +165,28 @@ add from to markov =
         |> Maybe.map ((+) 1)
         |> Maybe.map set
         |> Maybe.withDefault markov
+
+
+addList : List String -> Markov -> Markov
+addList strings markov =
+    strings
+        |> List.map String.toList
+        |> List.map List.Extra.groupsOfTwo
+        |> List.foldl addTransitionList markov
+
+
+{-| Add a list of transitions.
+-}
+addTransitionList : List ( Char, Char ) -> Markov -> Markov
+addTransitionList trainingData markov =
+    trainingData
+        |> List.foldl (\( from, to ) -> add from to) markov
+
+
+
+-- Generate
+
+
+word : Markov -> Generator String
+word _ =
+    Random.constant "fdsa"
