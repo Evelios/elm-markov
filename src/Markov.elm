@@ -2,7 +2,7 @@ module Markov exposing
     ( Markov
     , add, addList
     , word
-    , empty, probabilityOf
+    , empty
     )
 
 {-| Create a markov transition model of string inputs. This creates
@@ -30,7 +30,7 @@ module Markov exposing
 -}
 
 import Array exposing (Array)
-import Dict exposing (Dict)
+import Dict.Any exposing (AnyDict)
 import List.Extra
 import List.Util
 import Matrix exposing (Matrix)
@@ -38,30 +38,50 @@ import Random exposing (Generator)
 
 
 
-{- A markov graph which represents the chance of transitioning from one element to another.
+{- A markov graph which represents the chance of transitioning from one element to another. The row is the 'from'
+   element and the column is the 'to' element. Each row represents the transition counts for each of those elements.
 
-   The row is the 'from' element and the column is the 'to' element.
+   Note: Using this matrix library indices are given in (column, row) as per mathematical notation with (0, 0) on the
+         top left.
 
    Example:
 
-   Total = 15
        a  b  c
      a 1  2  1
      b 3  2  5
      c 0  1  0
 
-   Chance of a -> b = 2 / 15
-   Chance of b -> a = 3 / 15
+     a -> a = 1/4
+     a -> b = 1/2
+     a -> c = 1/4
 -}
 
 
 type Markov
     = Markov
         { matrix : Matrix Int
-        , total : Int
         , alphabet : List Char
-        , alphabetLookup : Dict Char Int
+        , alphabetLookup : AnyDict Int Element Int
         }
+
+
+type Element
+    = Start
+    | Element Char
+    | End
+
+
+elementComparable : Element -> Int
+elementComparable e =
+    case e of
+        Start ->
+            -2
+
+        End ->
+            -1
+
+        Element char ->
+            Char.toCode char
 
 
 
@@ -79,9 +99,14 @@ empty alphabet =
     in
     Markov
         { matrix = Matrix.repeat numElements numElements 0
-        , total = 0
         , alphabet = alphabet
-        , alphabetLookup = Dict.fromList <| List.indexedMap (\i a -> ( a, i )) alphabet
+        , alphabetLookup =
+            alphabet
+                |> List.map Element
+                |> (::) End
+                |> (::) Start
+                |> List.indexedMap (\i a -> ( a, i ))
+                |> Dict.Any.fromList elementComparable
         }
 
 
@@ -91,39 +116,24 @@ empty alphabet =
 
 {-| Private: Method to convert a character to it's index within the matrix.
 -}
-charToIndex : Char -> Markov -> Maybe Int
-charToIndex c (Markov model) =
-    Dict.get c model.alphabetLookup
+charToIndex : Element -> Markov -> Maybe Int
+charToIndex element (Markov model) =
+    Dict.Any.get element model.alphabetLookup
 
 
 {-| Private: Get the number of times this transition is located in the markov graph.
 -}
-get : Char -> Char -> Markov -> Maybe Int
+get : Element -> Element -> Markov -> Maybe Int
 get from to markov =
     case markov of
         Markov model ->
             case ( charToIndex from markov, charToIndex to markov ) of
                 ( Just fromIndex, Just toIndex ) ->
-                    Matrix.get fromIndex toIndex model.matrix
+                    Matrix.get toIndex fromIndex model.matrix
                         |> Result.toMaybe
 
                 _ ->
                     Nothing
-
-
-{-| Get the probability of a particular transition happening.
--}
-probabilityOf : Char -> Char -> Markov -> Float
-probabilityOf from to (Markov markov) =
-    case markov.total of
-        0 ->
-            0
-
-        total ->
-            Markov markov
-                |> get from to
-                |> Maybe.withDefault 0
-                |> (\occurrences -> toFloat occurrences / toFloat total)
 
 
 
@@ -133,7 +143,7 @@ probabilityOf from to (Markov markov) =
 {-| Add a transition into the markov graph. If the character is not an uppercase or lowercase character or a digit then
 the transition is not added.
 -}
-add : Char -> Char -> Markov -> Markov
+add : Element -> Element -> Markov -> Markov
 add from to markov =
     let
         set value =
@@ -143,8 +153,7 @@ add from to markov =
                         Markov model ->
                             Markov
                                 { model
-                                    | matrix = Matrix.set fromIndex toIndex value model.matrix
-                                    , total = model.total + 1
+                                    | matrix = Matrix.set toIndex fromIndex value model.matrix
                                 }
                 )
                 (charToIndex from markov)
@@ -161,16 +170,23 @@ addList : List String -> Markov -> Markov
 addList strings markov =
     strings
         |> List.map String.toList
-        |> List.map List.Util.groupsOfTwo
+        |> List.map (List.map Element)
         |> List.foldl addTransitionList markov
 
 
 {-| Add a list of transitions.
 -}
-addTransitionList : List ( Char, Char ) -> Markov -> Markov
+addTransitionList : List Element -> Markov -> Markov
 addTransitionList trainingData markov =
-    trainingData
-        |> List.foldl (\( from, to ) -> add from to) markov
+    if List.isEmpty trainingData then
+        markov
+
+    else
+        trainingData
+            |> (::) Start
+            |> (\beginning -> List.append beginning [ End ])
+            |> List.Util.groupsOfTwo
+            |> List.foldl (\( from, to ) -> add from to) markov
 
 
 
@@ -180,43 +196,36 @@ addTransitionList trainingData markov =
 word : Markov -> Generator (List Char)
 word (Markov model) =
     let
-        maybeGenStartingChar : Maybe (Generator Char)
-        maybeGenStartingChar =
-            case model.alphabet of
-                firstEle :: remainingEle ->
-                    Just <| Random.uniform firstEle remainingEle
+        startChar : Generator Element
+        startChar =
+            nextChar Start
 
-                [] ->
-                    Nothing
-
-        -- Should probably be a maybe
-        nextChar : Char -> Generator Char
-        nextChar prevChar =
+        nextChar : Element -> Generator Element
+        nextChar prevElement =
             let
                 weights : List Float
                 weights =
-                    charToIndex prevChar (Markov model)
-                        -- Need to fix this
+                    charToIndex prevElement (Markov model)
                         |> Maybe.withDefault 0
                         |> (\row -> Matrix.getRow row model.matrix)
                         |> Result.map Array.toList
-                        |> Result.withDefault (List.repeat (List.length model.alphabet) 1)
+                        |> Result.withDefault (List.repeat (Dict.Any.size model.alphabetLookup) 1)
                         |> (\intWeights ->
                                 List.map (\weight -> toFloat weight / (toFloat <| List.sum intWeights)) intWeights
                            )
 
-                possibilities : List ( Float, Char )
+                possibilities : List ( Float, Element )
                 possibilities =
-                    List.Extra.zip weights model.alphabet
+                    List.Extra.zip weights (Dict.Any.keys model.alphabetLookup)
             in
             case possibilities of
                 firstPossibility :: remainingPossibilities ->
                     Random.weighted firstPossibility remainingPossibilities
 
                 [] ->
-                    Random.constant ' '
+                    Random.constant End
 
-        generateWord : Int -> Generator Char -> Generator (List Char) -> Generator (List Char)
+        generateWord : Int -> Generator Element -> Generator (List Element) -> Generator (List Element)
         generateWord depth prev acc =
             case depth of
                 0 ->
@@ -231,10 +240,20 @@ word (Markov model) =
                             Random.map2 (\a n -> List.append a [ n ]) acc next
                     in
                     generateWord (depth - 1) next nextAcc
-    in
-    case maybeGenStartingChar of
-        Just genStartingChar ->
-            generateWord 5 genStartingChar (Random.map List.singleton genStartingChar)
 
-        Nothing ->
-            Random.constant []
+        cleanResults =
+            List.filterMap
+                (\e ->
+                    case e of
+                        Start ->
+                            Nothing
+
+                        Element a ->
+                            Just a
+
+                        End ->
+                            Nothing
+                )
+    in
+    generateWord 5 startChar (Random.map List.singleton startChar)
+        |> Random.map cleanResults
