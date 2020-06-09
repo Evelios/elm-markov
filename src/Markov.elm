@@ -60,7 +60,7 @@ import Random exposing (Generator)
 type Markov
     = Markov
         { matrix : Matrix Int
-        , alphabet : List Char
+        , alphabet : List Element
         , alphabetLookup : AnyDict Int Element Int
         }
 
@@ -96,15 +96,18 @@ empty alphabet =
     let
         numElements =
             List.length alphabet
-    in
-    Markov
-        { matrix = Matrix.repeat numElements numElements 0
-        , alphabet = alphabet
-        , alphabetLookup =
+
+        alphabetWithTerminals =
             alphabet
                 |> List.map Element
                 |> (::) End
                 |> (::) Start
+    in
+    Markov
+        { matrix = Matrix.repeat numElements numElements 0
+        , alphabet = alphabetWithTerminals
+        , alphabetLookup =
+            alphabetWithTerminals
                 |> List.indexedMap (\i a -> ( a, i ))
                 |> Dict.Any.fromList elementComparable
         }
@@ -134,6 +137,19 @@ get from to markov =
 
                 _ ->
                     Nothing
+
+
+{-| Private: Get all the possible transitioning characters from this element. If an element doesn't have a transition property,
+then it will default to the terminal node. The list is not normalized.
+-}
+transitionProbabilities : Element -> Markov -> List ( Float, Element )
+transitionProbabilities from (Markov model) =
+    charToIndex from (Markov model)
+        |> Maybe.andThen (\row -> Result.toMaybe <| Matrix.getRow row model.matrix)
+        |> Maybe.map Array.toList
+        |> Maybe.map (List.map toFloat)
+        |> Maybe.map (\row -> List.Extra.zip row model.alphabet)
+        |> Maybe.withDefault [ ( 1, End ) ]
 
 
 
@@ -194,7 +210,7 @@ addTransitionList trainingData markov =
 
 
 word : Markov -> Generator (List Char)
-word (Markov model) =
+word markov =
     let
         startChar : Generator Element
         startChar =
@@ -202,23 +218,7 @@ word (Markov model) =
 
         nextChar : Element -> Generator Element
         nextChar prevElement =
-            let
-                weights : List Float
-                weights =
-                    charToIndex prevElement (Markov model)
-                        |> Maybe.withDefault 0
-                        |> (\row -> Matrix.getRow row model.matrix)
-                        |> Result.map Array.toList
-                        |> Result.withDefault (List.repeat (Dict.Any.size model.alphabetLookup) 1)
-                        |> (\intWeights ->
-                                List.map (\weight -> toFloat weight / (toFloat <| List.sum intWeights)) intWeights
-                           )
-
-                possibilities : List ( Float, Element )
-                possibilities =
-                    List.Extra.zip weights (Dict.Any.keys model.alphabetLookup)
-            in
-            case possibilities of
+            case transitionProbabilities prevElement markov of
                 firstPossibility :: remainingPossibilities ->
                     Random.weighted firstPossibility remainingPossibilities
 
