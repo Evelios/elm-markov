@@ -71,7 +71,12 @@ update msg model =
         GenerateWord ->
             ( model
             , Random.generate WordGenerated <|
-                Random.map String.fromList (Markov.word model.markov)
+                Random.map String.fromList
+                    (Markov.phrase
+                        { maxLength = 10
+                        }
+                        model.markov
+                    )
             )
 
         WordGenerated word ->

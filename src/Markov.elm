@@ -1,8 +1,8 @@
 module Markov exposing
     ( Markov
-    , add, addList
-    , word
     , empty
+    , add, addList
+    , phrase, PhraseSettings
     )
 
 {-| Create a markov transition model of string inputs. This creates
@@ -15,7 +15,7 @@ module Markov exposing
 
 # Builders
 
-@docs fromList
+@docs empty, fromList
 
 
 # Modifiers
@@ -25,7 +25,7 @@ module Markov exposing
 
 # Generation
 
-@docs word
+@docs phrase, PhraseSettings
 
 -}
 
@@ -139,19 +139,6 @@ get from to markov =
                     Nothing
 
 
-{-| Private: Get all the possible transitioning characters from this element. If an element doesn't have a transition property,
-then it will default to the terminal node. The list is not normalized.
--}
-transitionProbabilities : Element -> Markov -> List ( Float, Element )
-transitionProbabilities from (Markov model) =
-    charToIndex from (Markov model)
-        |> Maybe.andThen (\row -> Result.toMaybe <| Matrix.getRow row model.matrix)
-        |> Maybe.map Array.toList
-        |> Maybe.map (List.map toFloat)
-        |> Maybe.map (\row -> List.Extra.zip row model.alphabet)
-        |> Maybe.withDefault [ ( 1, End ) ]
-
-
 
 -- Modifiers
 
@@ -209,15 +196,37 @@ addTransitionList trainingData markov =
 -- Generate
 
 
-word : Markov -> Generator (List Char)
-word markov =
-    let
-        startChar : Generator Element
-        startChar =
-            nextChar Start
+type alias PhraseSettings =
+    { maxLength : Int
+    }
 
-        nextChar : Element -> Generator Element
-        nextChar prevElement =
+
+phrase : PhraseSettings -> Markov -> Generator (List Char)
+phrase settings markov =
+    let
+        phraseHelper : Int -> Element -> List Element -> Generator (List Element)
+        phraseHelper remainingDepth prevElement accumulator =
+            case remainingDepth of
+                0 ->
+                    Random.constant accumulator
+
+                _ ->
+                    Random.andThen
+                        (\nextElement ->
+                            case nextElement of
+                                Element _ ->
+                                    phraseHelper
+                                        (remainingDepth - 1)
+                                        nextElement
+                                        (List.append accumulator [ nextElement ])
+
+                                _ ->
+                                    Random.constant accumulator
+                        )
+                        (genNextElement prevElement)
+
+        genNextElement : Element -> Generator Element
+        genNextElement prevElement =
             case transitionProbabilities prevElement markov of
                 firstPossibility :: remainingPossibilities ->
                     Random.weighted firstPossibility remainingPossibilities
@@ -225,35 +234,25 @@ word markov =
                 [] ->
                     Random.constant End
 
-        generateWord : Int -> Generator Element -> Generator (List Element) -> Generator (List Element)
-        generateWord depth prev acc =
-            case depth of
-                0 ->
-                    acc
-
-                _ ->
-                    let
-                        next =
-                            Random.andThen nextChar prev
-
-                        nextAcc =
-                            Random.map2 (\a n -> List.append a [ n ]) acc next
-                    in
-                    generateWord (depth - 1) next nextAcc
+        transitionProbabilities : Element -> Markov -> List ( Float, Element )
+        transitionProbabilities from (Markov model) =
+            charToIndex from (Markov model)
+                |> Maybe.andThen (\row -> Result.toMaybe <| Matrix.getRow row model.matrix)
+                |> Maybe.map Array.toList
+                |> Maybe.map (List.map toFloat)
+                |> Maybe.map (\row -> List.Extra.zip row model.alphabet)
+                |> Maybe.withDefault [ ( 1, End ) ]
 
         cleanResults =
             List.filterMap
                 (\e ->
                     case e of
-                        Start ->
-                            Nothing
-
                         Element a ->
                             Just a
 
-                        End ->
+                        _ ->
                             Nothing
                 )
     in
-    generateWord 5 startChar (Random.map List.singleton startChar)
+    phraseHelper settings.maxLength Start []
         |> Random.map cleanResults
