@@ -2,6 +2,7 @@
 elm-stuff/
 
 # User Stuff
+.idea/
 *.vim
 *.swp
 
