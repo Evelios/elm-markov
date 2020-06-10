@@ -4,13 +4,14 @@ import Fuzz exposing (Fuzzer)
 import Markov exposing (Markov)
 
 
+alphabet : List Char
+alphabet =
+    List.range (Char.toCode 'a') (Char.toCode 'z')
+        |> List.map Char.fromCode
+
+
 markov : Fuzzer Markov
 markov =
     Fuzz.map
-        (List.foldl (\( from, to ) -> Markov.add from to) Markov.empty)
-        transitions
-
-
-transitions : Fuzzer (List ( Char, Char ))
-transitions =
-    Fuzz.list (Fuzz.tuple ( Fuzz.char, Fuzz.char ))
+        (\data -> Markov.addList data (Markov.empty alphabet))
+        (Fuzz.list Fuzz.string)

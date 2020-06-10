@@ -3,6 +3,7 @@ module Markov exposing
     , empty
     , add, addList
     , phrase, PhraseSettings
+    , encode, decode
     )
 
 {-| Create a markov transition model of string inputs. This creates
@@ -27,13 +28,21 @@ module Markov exposing
 
 @docs phrase, PhraseSettings
 
+
+# Encoding and Decoding
+
+@docs encode, decode
+
 -}
 
 import Array exposing (Array)
 import Dict.Any exposing (AnyDict)
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode exposing (Value)
 import List.Extra
 import List.Util
 import Matrix exposing (Matrix)
+import Matrix.Extra
 import Random exposing (Generator)
 
 
@@ -58,11 +67,14 @@ import Random exposing (Generator)
 
 
 type Markov
-    = Markov
-        { matrix : Matrix Int
-        , alphabet : List Element
-        , alphabetLookup : AnyDict Int Element Int
-        }
+    = Markov MarkovData
+
+
+type alias MarkovData =
+    { matrix : Matrix Int
+    , alphabet : List Element
+    , alphabetLookup : AnyDict Int Element Int
+    }
 
 
 type Element
@@ -256,3 +268,77 @@ phrase settings markov =
     in
     phraseHelper settings.maxLength Start []
         |> Random.map cleanResults
+
+
+
+-- Encoding / Decoding
+
+
+encode : Markov -> Value
+encode (Markov { matrix, alphabet, alphabetLookup }) =
+    let
+        elementToString element =
+            case element of
+                Start ->
+                    "start"
+
+                End ->
+                    "end"
+
+                Element c ->
+                    String.fromChar c
+    in
+    Encode.object
+        [ ( "matrix"
+          , Matrix.Extra.encode
+                matrix
+          )
+        , ( "alphabet"
+          , Encode.list
+                (Encode.string << elementToString)
+                alphabet
+          )
+        , ( "alphabetLookup"
+          , Dict.Any.encode
+                elementToString
+                Encode.int
+                alphabetLookup
+          )
+        ]
+
+
+decode : Decoder Markov
+decode =
+    let
+        stringToElement value =
+            case value of
+                "start" ->
+                    Start
+
+                "end" ->
+                    End
+
+                _ ->
+                    value
+                        |> String.toList
+                        |> List.head
+                        |> Maybe.withDefault ' '
+                        |> Element
+    in
+    Decode.map3
+        MarkovData
+        (Decode.field "matrix"
+            Matrix.Extra.decode
+        )
+        (Decode.field "alphabet" <|
+            Decode.list (Decode.map stringToElement Decode.string)
+        )
+        (Decode.field "alphabetLookup" <|
+            Dict.Any.decode
+                (\keyString _ ->
+                    stringToElement keyString
+                )
+                elementComparable
+                Decode.int
+        )
+        |> Decode.map Markov

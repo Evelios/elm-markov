@@ -2,9 +2,12 @@ module Main exposing (..)
 
 import Browser
 import File exposing (File)
+import File.Download
 import File.Select
 import Html exposing (Html)
 import Html.Events
+import Json.Decode
+import Json.Encode
 import Markov exposing (Markov)
 import Random
 import Task
@@ -23,6 +26,10 @@ type Msg
     | CorpusLoaded String
     | GenerateWord
     | WordGenerated String
+    | DownloadMarkov
+    | RequestMarkov
+    | MarkovFileLoaded File
+    | MarkovLoaded String
 
 
 main : Program () Model Msg
@@ -31,7 +38,7 @@ main =
         { init = init
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
 
 
@@ -42,6 +49,11 @@ init _ =
       }
     , Cmd.none
     )
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Sub.none
 
 
 
@@ -57,7 +69,9 @@ update msg model =
             )
 
         RequestCorpus ->
-            ( model, requestCorpus )
+            ( model
+            , File.Select.file [ "text" ] CorpusFileLoaded
+            )
 
         CorpusFileLoaded file ->
             ( model
@@ -84,6 +98,32 @@ update msg model =
             , Cmd.none
             )
 
+        DownloadMarkov ->
+            ( model
+            , File.Download.string "markov.json" "text/json" <|
+                Json.Encode.encode 2 <|
+                    Markov.encode model.markov
+            )
+
+        RequestMarkov ->
+            ( model
+            , File.Select.file [ "text/json" ] MarkovFileLoaded
+            )
+
+        MarkovFileLoaded file ->
+            ( model
+            , Task.perform MarkovLoaded <| File.toString file
+            )
+
+        MarkovLoaded json ->
+            ( { model
+                | markov =
+                    Json.Decode.decodeString Markov.decode json
+                        |> Result.withDefault model.markov
+              }
+            , Cmd.none
+            )
+
 
 newMarkov : Markov
 newMarkov =
@@ -93,11 +133,6 @@ newMarkov =
                 |> List.map Char.fromCode
     in
     Markov.empty alphabet
-
-
-requestCorpus : Cmd Msg
-requestCorpus =
-    File.Select.file [ "text" ] CorpusFileLoaded
 
 
 trainMarkov : String -> Markov
@@ -132,6 +167,8 @@ view model =
         buttons =
             [ Html.button [ Html.Events.onClick RequestCorpus ] [ Html.text "Load corpus" ]
             , Html.button [ Html.Events.onClick GenerateWord ] [ Html.text "Generate Word" ]
+            , Html.button [ Html.Events.onClick DownloadMarkov ] [ Html.text "Download Model" ]
+            , Html.button [ Html.Events.onClick RequestMarkov ] [ Html.text "Load Model" ]
             ]
     in
     Html.div [] (List.append buttons paragraphs)
