@@ -8,14 +8,15 @@ import Html exposing (Html)
 import Html.Events
 import Json.Decode
 import Json.Encode
-import Markov exposing (Markov)
+import Markov
+import Markov.String exposing (MarkovString)
 import Random
 import Task
 
 
 type alias Model =
     { words : List String
-    , markov : Markov
+    , markov : MarkovString
     }
 
 
@@ -45,7 +46,7 @@ main =
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( { words = []
-      , markov = Markov.empty
+      , markov = Markov.String.empty
       }
     , Cmd.none
     )
@@ -102,7 +103,7 @@ update msg model =
             ( model
             , File.Download.string "markov.json" "text/json" <|
                 Json.Encode.encode 2 <|
-                    Markov.encode model.markov
+                    Markov.String.encode model.markov
             )
 
         RequestMarkov ->
@@ -118,13 +119,13 @@ update msg model =
         MarkovLoaded json ->
             { model
                 | markov =
-                    Json.Decode.decodeString Markov.decode json
+                    Json.Decode.decodeString Markov.String.decode json
                         |> Result.withDefault model.markov
             }
                 |> update GenerateWord
 
 
-trainMarkov : String -> Markov
+trainMarkov : String -> MarkovString
 trainMarkov rawCorpus =
     let
         cleanCorpus : List String
@@ -136,7 +137,7 @@ trainMarkov rawCorpus =
                 |> List.filter (not << String.isEmpty)
     in
     cleanCorpus
-        |> (\cleanedCorpus -> Markov.addList cleanedCorpus Markov.empty)
+        |> (\cleanedCorpus -> Markov.String.trainList cleanedCorpus Markov.String.empty)
 
 
 

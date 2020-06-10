@@ -1,17 +1,20 @@
 module Markov exposing
-    ( Markov
+    ( Markov, Element(..)
     , empty
-    , add, addList
+    , add, train
     , phrase, PhraseSettings
     , encode, decode
     )
 
-{-| Create a markov transition model of string inputs. This creates
+{-| Create a markov transition model.
+
+Much of this documentation will use examples from the `String` implementation of this module to give you insight into
+how to implement this model with the data that you are trying to work with.
 
 
 # Types
 
-@docs Markov
+@docs Markov, Element
 
 
 # Builders
@@ -21,7 +24,7 @@ module Markov exposing
 
 # Modifiers
 
-@docs add, addList
+@docs add, train
 
 
 # Generation
@@ -44,13 +47,17 @@ import Random exposing (Generator)
 
 {-| A markov graph is a representation of transition probabilities.
 -}
-type Markov
-    = Markov (AnyDict Int Element (AnyDict Int Element Int))
+type Markov comparable a
+    = Markov (AnyDict comparable (Element a) (AnyDict comparable (Element a) Int)) (Element a -> comparable)
 
 
-type Element
+{-| Elements are needed to define the beginning and end of a chain. We don't only need to know the transition
+probabilities from one element to another. We need to know the chance that a chain starts with an element, or the chance
+that the chain will end with an element.
+-}
+type Element a
     = Start
-    | Element Char
+    | Element a
     | End
 
 
@@ -58,25 +65,25 @@ type Element
 -- Builders
 
 
-charComparable : Element -> Int
-charComparable element =
-    case element of
-        Start ->
-            -2
-
-        Element c ->
-            Char.toCode c
-
-        End ->
-            -1
-
-
 {-| Create an empty markov chain with no elements in it. This is needed to add further elements into it to start to
-train the model.
+train the model. In order to store the transition properties, we need a way of serializing your data.
+
+    charComparable : Element Char -> Int
+    charComparable element =
+        case element of
+            Start ->
+                -2
+
+            Element c ->
+                Char.toCode c
+
+            End ->
+                -1
+
 -}
-empty : Markov
-empty =
-    Markov <| Dict.Any.empty charComparable
+empty : (Element a -> comparable) -> Markov comparable a
+empty conversion =
+    Markov (Dict.Any.empty conversion) conversion
 
 
 
@@ -85,8 +92,8 @@ empty =
 
 {-| Private: Get the number of times this transition is located in the markov graph.
 -}
-get : Element -> Element -> Markov -> Maybe Int
-get from to (Markov transitionTable) =
+get : Element a -> Element a -> Markov comparable a -> Maybe Int
+get from to (Markov transitionTable _) =
     transitionTable
         |> Dict.Any.get from
         |> Maybe.andThen (Dict.Any.get to)
@@ -96,48 +103,45 @@ get from to (Markov transitionTable) =
 -- Modifiers
 
 
-set : Element -> Element -> Int -> Markov -> Markov
-set from to value (Markov transitionTable) =
-    Dict.Any.get from transitionTable
-        |> Maybe.withDefault (Dict.Any.empty charComparable)
-        |> Dict.Any.insert to value
-        |> (\toTable -> Dict.Any.insert from toTable transitionTable)
-        |> Markov
-
-
 {-| Add a transition into the markov graph. If the character is not an uppercase or lowercase character or a digit then
 the transition is not added.
 -}
-add : Element -> Element -> Markov -> Markov
+add : Element a -> Element a -> Markov comparable a -> Markov comparable a
 add from to markov =
-    set
-        from
-        to
-        (get from to markov |> Maybe.withDefault 0 |> (+) 1)
-        markov
+    case markov of
+        Markov transitionTable conversion ->
+            let
+                set : Int -> Markov comparable a
+                set value =
+                    Dict.Any.get from transitionTable
+                        |> Maybe.withDefault (Dict.Any.empty conversion)
+                        |> Dict.Any.insert to value
+                        |> (\toTable -> Dict.Any.insert from toTable transitionTable)
+                        |> (\table -> Markov table conversion)
+            in
+            set (get from to markov |> Maybe.withDefault 0 |> (+) 1)
 
 
-addList : List String -> Markov -> Markov
-addList strings markov =
-    strings
-        |> List.map String.toList
-        |> List.map (List.map Element)
-        |> List.foldl addTransitionList markov
-
-
-{-| Add a list of transitions.
+{-| Add a single string of transitions. This function adds the Start and End to the list so that you are able to train
+the data with starting and ending probabilities as well.
 -}
-addTransitionList : List Element -> Markov -> Markov
-addTransitionList trainingData markov =
+train : List a -> Markov comparable a -> Markov comparable a
+train trainingData markov =
     if List.isEmpty trainingData then
         markov
 
     else
         trainingData
+            |> List.map Element
             |> (::) Start
             |> (\beginning -> List.append beginning [ End ])
             |> List.Util.groupsOfTwo
             |> List.foldl (\( from, to ) -> add from to) markov
+
+
+trainList : List (List a) -> Markov comparable a -> Markov comparable a
+trainList trainingLists markov =
+    List.foldl train markov trainingLists
 
 
 
@@ -149,10 +153,10 @@ type alias PhraseSettings =
     }
 
 
-phrase : PhraseSettings -> Markov -> Generator (List Char)
+phrase : PhraseSettings -> Markov comparable a -> Generator (List a)
 phrase settings markov =
     let
-        phraseHelper : Int -> Element -> List Element -> Generator (List Element)
+        phraseHelper : Int -> Element a -> List (Element a) -> Generator (List (Element a))
         phraseHelper remainingDepth prevElement accumulator =
             case remainingDepth of
                 0 ->
@@ -173,14 +177,14 @@ phrase settings markov =
                         )
                         (genNextElement prevElement)
 
-        transitionProbabilities : Element -> Markov -> List ( Float, Element )
-        transitionProbabilities from (Markov transitionTable) =
+        transitionProbabilities : Element a -> Markov comparable a -> List ( Float, Element a )
+        transitionProbabilities from (Markov transitionTable _) =
             Dict.Any.get from transitionTable
                 |> Maybe.map Dict.Any.toList
                 |> Maybe.withDefault [ ( End, 1 ) ]
                 |> List.map (\( a, b ) -> ( toFloat b, a ))
 
-        genNextElement : Element -> Generator Element
+        genNextElement : Element a -> Generator (Element a)
         genNextElement prevElement =
             case transitionProbabilities prevElement markov of
                 firstPossibility :: remainingPossibilities ->
@@ -208,8 +212,8 @@ phrase settings markov =
 -- Encoding / Decoding
 
 
-encode : Markov -> Value
-encode (Markov transitionTable) =
+encode : (a -> String) -> Markov comparable a -> Value
+encode toString (Markov transitionTable _) =
     let
         elementToString element =
             case element of
@@ -219,8 +223,8 @@ encode (Markov transitionTable) =
                 End ->
                     "end"
 
-                Element c ->
-                    String.fromChar c
+                Element value ->
+                    toString value
 
         encodeRow row =
             Dict.Any.encode elementToString Encode.int row
@@ -228,8 +232,8 @@ encode (Markov transitionTable) =
     Dict.Any.encode elementToString encodeRow transitionTable
 
 
-decode : Decoder Markov
-decode =
+decode : (String -> a) -> (Element a -> comparable) -> Decoder (Markov comparable a)
+decode decoder conversion =
     let
         stringToElement value =
             case value of
@@ -240,14 +244,10 @@ decode =
                     End
 
                 _ ->
-                    value
-                        |> String.toList
-                        |> List.head
-                        |> Maybe.withDefault ' '
-                        |> Element
+                    Element <| decoder value
 
         decodeDict =
-            Dict.Any.decode (\s _ -> stringToElement s) charComparable
+            Dict.Any.decode (\s _ -> stringToElement s) conversion
     in
     decodeDict (decodeDict Decode.int)
-        |> Decode.map Markov
+        |> Decode.map (\table -> Markov table conversion)

@@ -1,11 +1,11 @@
-module Markov.Fuzz exposing (markov)
+module Markov.Fuzz exposing (string)
 
 import Fuzz exposing (Fuzzer)
-import Markov exposing (Markov)
+import Markov.String exposing (MarkovString)
 
 
-markov : Fuzzer Markov
-markov =
+string : Fuzzer MarkovString
+string =
     Fuzz.map
-        (\data -> Markov.addList data Markov.empty)
+        (\data -> Markov.String.trainList data Markov.String.empty)
         (Fuzz.list Fuzz.string)
