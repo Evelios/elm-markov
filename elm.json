@@ -15,6 +15,7 @@
             "elm/random": "1.0.0",
             "elm-community/list-extra": "8.2.4",
             "elm-explorations/test": "1.2.2",
+            "jjant/elm-dict": "2.0.0",
             "turboMaCk/any-dict": "2.3.0"
         },
         "indirect": {

@@ -1,4 +1,4 @@
-module Main exposing (..)
+module Main exposing (Model, Msg(..), init, main, subscriptions, trainMarkov, update, view)
 
 import Browser
 import File exposing (File)
@@ -45,7 +45,7 @@ main =
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( { words = []
-      , markov = newMarkov
+      , markov = Markov.empty
       }
     , Cmd.none
     )
@@ -116,23 +116,12 @@ update msg model =
             )
 
         MarkovLoaded json ->
-            ( { model
+            { model
                 | markov =
                     Json.Decode.decodeString Markov.decode json
                         |> Result.withDefault model.markov
-              }
-            , Cmd.none
-            )
-
-
-newMarkov : Markov
-newMarkov =
-    let
-        alphabet =
-            List.range (Char.toCode 'a') (Char.toCode 'z')
-                |> List.map Char.fromCode
-    in
-    Markov.empty alphabet
+            }
+                |> update GenerateWord
 
 
 trainMarkov : String -> Markov
@@ -147,7 +136,7 @@ trainMarkov rawCorpus =
                 |> List.filter (not << String.isEmpty)
     in
     cleanCorpus
-        |> (\cleanedCorpus -> Markov.addList cleanedCorpus newMarkov)
+        |> (\cleanedCorpus -> Markov.addList cleanedCorpus Markov.empty)
 
 
 
