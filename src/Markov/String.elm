@@ -39,6 +39,8 @@ import Json.Encode exposing (Value)
 import Markov exposing (Element(..), Markov)
 
 
+{-| A type alias for a markov graph which is used on determining probabilities of character transitions in words.
+-}
 type alias MarkovString =
     Markov Int Char
 
@@ -56,16 +58,24 @@ charComparable element =
             -1
 
 
+{-| Create an empty markov string object.
+-}
 empty : MarkovString
 empty =
     Markov.empty charComparable
 
 
+{-| Train the markov model on a single string. This trains the model to store the transition probabilities of all the
+letters within the string as well as the probabilities to start with the first character and end with the last
+character.
+-}
 train : String -> MarkovString -> MarkovString
 train string markov =
     Markov.train (String.toList string) markov
 
 
+{-| Train the model on a sample of data or an entire corpus.
+-}
 trainList : List String -> MarkovString -> MarkovString
 trainList strings markov =
     List.foldl train markov strings
@@ -75,11 +85,15 @@ trainList strings markov =
 -- Json
 
 
+{-| Encode the markov string model into a json object.
+-}
 encode : MarkovString -> Value
 encode =
     Markov.encode String.fromChar
 
 
+{-| Decode a json object into a markov string model.
+-}
 decode : Decoder MarkovString
 decode =
     let

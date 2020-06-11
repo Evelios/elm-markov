@@ -87,7 +87,7 @@ update msg model =
             ( model
             , Random.generate WordGenerated <|
                 Random.map String.fromList
-                    (Markov.phrase
+                    (Markov.generateSequence
                         { maxLength = 10
                         }
                         model.markov
