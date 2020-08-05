@@ -1,7 +1,7 @@
 {
     "type": "package",
-    "name": "evelios/markov",
-    "summary" : "A markov model library for arbitrary data types ",
+    "name": "evelios/elm-markov",
+    "summary" : "A markov model library for arbitrary data types",
     "license": "BSD-3-Clause",
     "version": "1.0.0",
     "exposed-modules" : [
